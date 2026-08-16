@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing vX.Y.Z tag to publish
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+      - uses: cachix/install-nix-action@v31
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          python3 - "$RELEASE_TAG" <<'PY'
+          import json
+          import pathlib
+          import re
+          import sys
+          import tomllib
+
+          tag = sys.argv[1]
+          match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag)
+          if not match:
+              raise SystemExit(f"release tag must be vX.Y.Z, got {tag!r}")
+
+          version = ".".join(match.groups())
+          cargo = tomllib.loads(pathlib.Path("Cargo.toml").read_text())["package"]["version"]
+          manifest = json.loads(pathlib.Path("package/manifest.json").read_text())["version"]
+          package = ".".join(map(str, manifest))
+          if cargo != version or package != version:
+              raise SystemExit(
+                  f"tag {version}, Cargo.toml {cargo}, and package/manifest.json {package} must match"
+              )
+          PY
+      - name: Check and package
+        run: |
+          nix develop .#default --command just check
+          nix develop .#kindle --command just package
+      - name: Verify Kindle binary
+        run: |
+          nix develop .#kindle --command sh -eu -c '
+            readelf -h package/bin/kpm-ui | grep -q "Machine:.*ARM"
+            readelf -h package/bin/kpm-ui | grep -q "hard-float ABI"
+            ! readelf -d package/bin/kpm-ui | grep -Eq "RPATH|RUNPATH"
+          '
+      - name: Prepare Scriptlets
+        run: |
+          cp tools/install-kpm-ui.sh "dist/Install KPM UI.sh"
+          cp tools/uninstall-kpm-ui.sh "dist/Uninstall KPM UI.sh"
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/*.kpkg "dist/Install KPM UI.sh" "dist/Uninstall KPM UI.sh" --verify-tag --generate-notes --title "KPM UI ${RELEASE_TAG#v}"

@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Rust checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Check formatting, lint, and tests
+        run: nix develop .#default --command just check
+
+  kindle:
+    name: Kindle package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Build package
+        run: nix develop .#kindle --command just package
+      - name: Verify Kindle binary
+        run: |
+          nix develop .#kindle --command sh -eu -c '
+            readelf -h package/bin/kpm-ui | grep -q "Machine:.*ARM"
+            readelf -h package/bin/kpm-ui | grep -q "hard-float ABI"
+            ! readelf -d package/bin/kpm-ui | grep -Eq "RPATH|RUNPATH"
+          '
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpm-ui-kindlehf
+          path: dist/*.kpkg
+          if-no-files-found: error

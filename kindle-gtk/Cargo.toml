@@ -1,0 +1,8 @@
+[package]
+name = "kindle-gtk"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Small safe GTK 2 wrapper for Kindle applications"
+
+[dependencies]
