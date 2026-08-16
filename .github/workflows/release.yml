@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing vX.Y.Z tag to publish
+        description: Existing vX.Y.Z tag to upload artifacts to
         required: true
         type: string
 
@@ -63,8 +63,8 @@ jobs:
         run: |
           cp tools/install-kpm-ui.sh "dist/Install KPM UI.sh"
           cp tools/uninstall-kpm-ui.sh "dist/Uninstall KPM UI.sh"
-      - name: Publish GitHub release
+      - name: Upload artifacts to GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-        run: gh release create "$RELEASE_TAG" dist/*.kpkg "dist/Install KPM UI.sh" "dist/Uninstall KPM UI.sh" --verify-tag --generate-notes --title "KPM UI ${RELEASE_TAG#v}"
+        run: gh release upload "$RELEASE_TAG" dist/*.kpkg "dist/Install KPM UI.sh" "dist/Uninstall KPM UI.sh" --clobber
